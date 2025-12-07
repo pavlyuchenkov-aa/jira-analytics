@@ -16,7 +16,7 @@
 
 ```bash
 # Клонируйте репозиторий
-git clone https://github.com/yourusername/jira-analytics.git
+git clone https://github.com/pavlyuchenkov-aa/jira-analytics.git
 cd jira-analytics
 
 # Установите зависимости
