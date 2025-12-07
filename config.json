@@ -1,0 +1,5 @@
+{
+    "jira_url": "https://issues.apache.org/jira",
+    "project_key": "ASTERIXDB",
+    "max_results": 500
+}
