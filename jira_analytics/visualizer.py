@@ -1,7 +1,7 @@
 """Модуль для визуализации данных"""
 import matplotlib.pyplot as plt
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 from collections import defaultdict
 from typing import Dict, List, DefaultDict
 from jira_analytics.exceptions import VisualizationError
@@ -81,11 +81,11 @@ class JiraVisualizer:
             raise VisualizationError(f"Ошибка при построении распределения по статусам: {e}")
 
     def plot_created_vs_closed_timeline(self,
-                                        created_dates: DefaultDict[datetime.date, int],
-                                        closed_dates: DefaultDict[datetime.date, int],
-                                        issues_count: int) -> None:
+                                                      created_dates: DefaultDict[date, int],
+                                                      closed_dates: DefaultDict[date, int],
+                                                      issues_count: int) -> None:
         """
-        График заведенных и закрытых задач
+        График заведенных и закрытых задач за последние 3 месяца
 
         Args:
             created_dates: Количество созданных задач по датам
@@ -93,69 +93,51 @@ class JiraVisualizer:
             issues_count: Общее количество задач
         """
         try:
-            if not created_dates and not closed_dates:
+            # Определяем дату начала периода (3 месяца назад от текущей даты)
+            end_date = date.today()
+            start_date = end_date - timedelta(days=90)
+
+            # Фильтруем данные за последние 3 месяца
+            filtered_created = defaultdict(int)
+            filtered_closed = defaultdict(int)
+
+            for date_key, count in created_dates.items():
+                if start_date <= date_key <= end_date:
+                    filtered_created[date_key] = count
+
+            for date_key, count in closed_dates.items():
+                if start_date <= date_key <= end_date:
+                    filtered_closed[date_key] = count
+
+            # Если нет данных за последние 3 месяца
+            if not filtered_created and not filtered_closed:
                 plt.figure(figsize=(12, 6))
-                plt.text(0.5, 0.5, 'Нет данных для построения графика',
+                plt.text(0.5, 0.5, 'Нет данных за последние 3 месяца',
                          ha='center', va='center', transform=plt.gca().transAxes)
-                plt.title(f'{self.project_key}: График заведенных и закрытых задач')
+                plt.title(f'{self.project_key}: График заведенных и закрытых задач (последние 3 месяца)')
                 plt.show()
                 return
 
-            dates = sorted(set(created_dates.keys()) | set(closed_dates.keys()))
-            created_counts = [created_dates.get(date, 0) for date in dates]
-            closed_counts = [closed_dates.get(date, 0) for date in dates]
+            # Сортируем даты и получаем значения
+            dates = sorted(set(filtered_created.keys()) | set(filtered_closed.keys()))
+            created_counts = [filtered_created.get(date, 0) for date in dates]
+            closed_counts = [filtered_closed.get(date, 0) for date in dates]
 
             num_days = len(dates)
             plt.figure(figsize=(14, 8))
 
-            if num_days > 365:
-                print(f"Большой объем данных ({num_days} дней). Используется агрегация по месяцам.")
-                month_created = defaultdict(int)
-                month_closed = defaultdict(int)
-
-                for date, count in created_dates.items():
-                    month_key = date.replace(day=1)
-                    month_created[month_key] += count
-
-                for date, count in closed_dates.items():
-                    month_key = date.replace(day=1)
-                    month_closed[month_key] += count
-
-                months = sorted(set(month_created.keys()) | set(month_closed.keys()))
-                month_created_counts = [month_created.get(month, 0) for month in months]
-                month_closed_counts = [month_closed.get(month, 0) for month in months]
-
-                width = 0.35
-                x = range(len(months))
-
-                plt.bar([i - width / 2 for i in x], month_created_counts, width=width,
-                        label='Создано', color='#3498db', alpha=0.8)
-                plt.bar([i + width / 2 for i in x], month_closed_counts, width=width,
-                        label='Закрыто', color='#2ecc71', alpha=0.8)
-
-                plt.xlabel('Месяц')
-                plt.ylabel('Количество задач')
-                month_labels = [month.strftime('%b %Y') for month in months]
-
-                if len(months) > 12:
-                    step = max(1, len(months) // 12)
-                    plt.xticks([i for i in x if i % step == 0],
-                               [month_labels[i] for i in range(len(month_labels)) if i % step == 0],
-                               rotation=45, ha='right')
-                else:
-                    plt.xticks(x, month_labels, rotation=45, ha='right')
-
-            elif num_days > 90:
-                print(f"Достаточно данных ({num_days} дней). Используется скользящее среднее.")
+            # Если данных более чем на 60 дней, используем скользящее среднее
+            if num_days > 60:
+                print(f"За последние 3 месяца: {num_days} дней. Используется скользящее среднее.")
                 window_size = 7
                 created_smooth = []
                 closed_smooth = []
 
                 for i in range(len(created_counts)):
-                    start = max(0, i - window_size // 2)
-                    end = min(len(created_counts), i + window_size // 2 + 1)
-                    created_smooth.append(sum(created_counts[start:end]) / (end - start))
-                    closed_smooth.append(sum(closed_counts[start:end]) / (end - start))
+                    start_idx = max(0, i - window_size // 2)
+                    end_idx = min(len(created_counts), i + window_size // 2 + 1)
+                    created_smooth.append(sum(created_counts[start_idx:end_idx]) / (end_idx - start_idx))
+                    closed_smooth.append(sum(closed_counts[start_idx:end_idx]) / (end_idx - start_idx))
 
                 plt.plot(dates, created_smooth, label='Создано (сглаженное)',
                          color='#3498db', linewidth=2.5, alpha=0.9)
@@ -167,10 +149,11 @@ class JiraVisualizer:
 
                 plt.xlabel('Дата')
                 plt.ylabel('Количество задач (скользящее среднее, 7 дней)')
-                plt.gca().xaxis.set_major_locator(plt.MaxNLocator(10))
+                plt.gca().xaxis.set_major_locator(plt.MaxNLocator(15))
                 plt.xticks(rotation=45, ha='right')
 
             else:
+                # Для меньшего количества дней используем обычный график
                 plt.plot(dates, created_counts, label='Создано',
                          color='#3498db', linewidth=2, marker='o', markersize=4)
                 plt.plot(dates, closed_counts, label='Закрыто',
@@ -180,23 +163,36 @@ class JiraVisualizer:
                 plt.ylabel('Количество задач')
                 plt.xticks(rotation=45, ha='right')
 
+            # Форматирование заголовка и подписей
+            period_str = f"{start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')}"
             plt.title(
-                f'{self.project_key}: График заведенных и закрытых задач\nВсего дней: {num_days}, Всего задач: {issues_count}',
-                fontsize=14, fontweight='bold', pad=20)
+                f'{self.project_key}: График заведенных и закрытых задач\n'
+                f'Период: последние 3 месяца ({period_str})\n'
+                f'Дней с данными: {num_days}',
+                fontsize=14, fontweight='bold', pad=20
+            )
+
             plt.legend(loc='upper left', fontsize=11, framealpha=0.9)
             plt.grid(True, alpha=0.3, linestyle='--')
 
-            total_created = sum(created_counts)
-            total_closed = sum(closed_counts)
+            # Статистика за период
+            total_created_period = sum(created_counts)
+            total_closed_period = sum(closed_counts)
 
-            stats_x = 0.02
-            stats_y = 0.95
+            stats_x = 0.5  # Центр по горизонтали
+            stats_y = 0.98  # Ближе к верху, но не вплотную
             plt.text(stats_x, stats_y,
-                     f'Всего создано: {total_created}\nВсего закрыто: {total_closed}\nБаланс: {total_created - total_closed}',
+                     f'Создано за период: {total_created_period}\n'
+                     f'Закрыто за период: {total_closed_period}\n',
                      transform=plt.gca().transAxes,
                      bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
                      verticalalignment='top',
+                     horizontalalignment='center',  # Выравнивание по центру
                      fontsize=10)
+
+            # Добавляем вертикальную линию для сегодняшней даты
+            plt.axvline(x=end_date, color='red', linestyle='--', alpha=0.5, linewidth=1,
+                        label='Сегодня')
 
             plt.tight_layout()
             plt.axhline(y=0, color='gray', linestyle='-', alpha=0.3, linewidth=0.5)
